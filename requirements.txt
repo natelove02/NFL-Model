@@ -1,0 +1,5 @@
+# NFL Model Project Requirements
+pandas
+numpy
+matplotlib
+lxml
