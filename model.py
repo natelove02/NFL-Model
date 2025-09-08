@@ -6,6 +6,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, accuracy_score
 import fire
+import os
 
 
 class SimpleLinearModel(nn.Module):
@@ -312,6 +313,111 @@ def check_predictions():
     return "Prediction analysis complete"
 
 
+def predict_manual(
+    home_team: str = "DAL",
+    away_team: str = "PHI",
+    model_path: str = "nfl_linear.pth",
+    # Quick-input knobs (others default to 0)
+    elo_diff: float = 0.0,
+    is_international: int = 0,
+    season_weight: float = 0.3,
+    off_pts_per_drive_vs_def_pts_per_poss: float = 0.0,
+    off3d_vs_def3d: float = 0.0,
+    off4d_vs_def4d: float = 0.0,
+    to_rate_vs_def_to_rate: float = 0.0,
+    total_off_eff_diff: float = 0.0,
+    total_def_eff_diff: float = 0.0,
+):
+    """Manual W/L prediction using a few key inputs.
+
+    Notes:
+    - Predicts from the home team's perspective (win_target=1 means home win).
+    - Unspecified features default to 0, which is a reasonable neutral baseline for diffs.
+    - Uses a scaler fit on the full dataset to transform the manual row.
+    """
+
+    if not os.path.exists(model_path):
+        return f"Model file '{model_path}' not found. Train first with: python model.py train --epochs=200 --lr=0.001 --model_name=nfl_linear"
+
+    # Load dataset to recover feature columns and fit scaler
+    nfl_model = NFLModel()
+    X, y, feature_cols, target_cols = nfl_model.load_data()
+    scaler = StandardScaler().fit(X)
+
+    # Build a zero vector and set available inputs
+    row = np.zeros(len(feature_cols), dtype=float)
+
+    def set_feat(name: str, value: float):
+        if name in feature_cols:
+            row[feature_cols.index(name)] = value
+
+    # Map provided inputs onto known columns
+    set_feat('IsInternational', float(is_international))
+    set_feat('Elo_Diff', float(elo_diff))
+    set_feat('H_Season_Weight', float(season_weight))
+    set_feat('OffPtsPerDrive_vs_DefPtsPerPoss', float(off_pts_per_drive_vs_def_pts_per_poss))
+    set_feat('Off3DSuccess_vs_Def3DStop', float(off3d_vs_def3d))
+    set_feat('Off4DSuccess_vs_Def4DStop', float(off4d_vs_def4d))
+    set_feat('OffTORate_vs_DefTORate', float(to_rate_vs_def_to_rate))
+    set_feat('Total_Offensive_Efficiency_Diff', float(total_off_eff_diff))
+    set_feat('Total_Defensive_Efficiency_Diff', float(total_def_eff_diff))
+
+    # Scale and predict
+    row_scaled = scaler.transform(row.reshape(1, -1))
+    model = SimpleLinearModel(input_size=len(feature_cols), output_size=3)
+    model.load_state_dict(torch.load(model_path, map_location='cpu'))
+    model.eval()
+
+    with torch.no_grad():
+        x_tensor = torch.from_numpy(row_scaled.astype(np.float32))
+        preds = model(x_tensor).numpy().reshape(-1)
+
+    spread_pred, total_pred, win_logit = float(preds[0]), float(preds[1]), float(preds[2])
+    win_prob = float(torch.sigmoid(torch.tensor(win_logit)).item())
+    pick = f"Home ({home_team})" if win_prob >= 0.5 else f"Away ({away_team})"
+
+    print("=== MANUAL W/L PREDICTION ===")
+    print(f"Home: {home_team} vs Away: {away_team}")
+    print(f"Inputs -> Elo_Diff={elo_diff}, SeasonWeight={season_weight}, Intl={is_international}, OffEffDiff={total_off_eff_diff}, DefEffDiff={total_def_eff_diff}")
+    print(f"Predicted home win probability: {win_prob:.3f} -> Pick: {pick}")
+
+    return {
+        'home': home_team,
+        'away': away_team,
+        'home_win_prob': win_prob,
+        'pick': pick,
+        'debug': {
+            'spread_pred': spread_pred,
+            'total_pred': total_pred,
+        }
+    }
+
+
+def predict_prompt(model_path: str = "nfl_linear.pth"):
+    """Interactive prompt to enter a few values and get a W/L pick."""
+    try:
+        home_team = input("Home team (e.g., DAL): ").strip() or "DAL"
+        away_team = input("Away team (e.g., PHI): ").strip() or "PHI"
+        elo_diff = float(input("Elo_Diff (home - away, e.g., 25): ") or 0.0)
+        season_weight = float(input("Season weight (0-1, default 0.3): ") or 0.3)
+        is_international = int(input("International game? 0/1 (default 0): ") or 0)
+        total_off_eff_diff = float(input("Total Offensive Efficiency Diff (home-away, default 0): ") or 0.0)
+        total_def_eff_diff = float(input("Total Defensive Efficiency Diff (home-away, default 0): ") or 0.0)
+    except Exception as e:
+        return f"Invalid input: {e}"
+
+    return predict_manual(
+        home_team=home_team,
+        away_team=away_team,
+        model_path=model_path,
+        elo_diff=elo_diff,
+        season_weight=season_weight,
+        is_international=is_international,
+        total_off_eff_diff=total_off_eff_diff,
+        total_def_eff_diff=total_def_eff_diff,
+    )
+
+
 def main():
     fire.Fire({
         "check": check_data, 
@@ -319,7 +425,9 @@ def main():
         "train": train_model,
         "train_mlp": train_mlp,
         "train_cnn": train_cnn,
-        "check_predictions": check_predictions
+        "check_predictions": check_predictions,
+        "predict": predict_manual,
+        "predict_prompt": predict_prompt,
     })
 
 if __name__ == "__main__":
