@@ -1,0 +1,14 @@
+Home_Team,Away_Team,Predicted_Winner_linear,Predicted_Winner_linear_win_noelo,Predicted_Winner_linearwinonly,Predicted_Winner_mlp_combined,Predicted_Winner_xgboost,Predicted_Winner_xgboost_noelo,Spread_Pick_avg_spread_custom_ensembles,Spread_Pick_linear,Spread_Pick_mlp_combined,Spread_Pick_stacking_spread_custom_ensembles,Spread_Pick_weighted_spread_custom_ensembles,Spread_Pick_xgboost,Spread_Pick_xgboost_noelo,Home_Win_Probability_linear,Home_Win_Probability_linear_win_noelo,Home_Win_Probability_linearwinonly,Home_Win_Probability_mlp_combined,Home_Win_Probability_xgboost,Home_Win_Probability_xgboost_noelo,Predicted_Total_linear,Predicted_Total_xgboost,Predicted_Total_xgboost_noelo
+BUF,NWE,BUF,BUF,BUF,BUF,BUF,BUF,BUF by 6.3,BUF by 5.4,BUF by 10.0,BUF by 15.1,BUF by 7.2,NWE by 2.4,BUF by 4.9,0.83,0.71,0.74,0.88,0.52,0.58,1.70,43.10,46.00
+CAR,MIA,MIA,CAR,MIA,MIA,CAR,CAR,CAR by 1.7,CAR by 0.6,MIA by 0.3,CAR by 0.2,CAR by 1.8,MIA by 2.0,MIA by 3.0,0.44,0.56,0.49,0.50,0.63,0.59,0.80,48.30,48.00
+CIN,DET,DET,DET,DET,DET,DET,DET,DET by 4.5,DET by 7.3,DET by 4.5,DET by 0.6,DET by 4.3,DET by 10.2,DET by 6.7,0.23,0.23,0.33,0.27,0.43,0.16,1.70,46.20,48.20
+CLE,MIN,MIN,MIN,MIN,MIN,CLE,CLE,MIN by 2.2,MIN by 4.7,MIN by 6.9,MIN by 3.1,MIN by 2.3,MIN by 4.5,MIN by 5.2,0.25,0.42,0.42,0.31,0.55,0.59,-2.20,45.90,51.10
+CLT,RAI,CLT,CLT,CLT,CLT,CLT,CLT,CLT by 7.1,CLT by 8.4,CLT by 15.7,CLT by 12.3,CLT by 7.8,RAI by 0.8,CLT by 11.7,0.89,0.86,0.72,0.89,0.51,0.57,0.20,39.70,45.10
+CRD,OTI,CRD,CRD,CRD,CRD,CRD,CRD,CRD by 5.5,CRD by 4.8,CRD by 13.6,CRD by 10.7,CRD by 6.1,OTI by 1.1,CRD by 1.7,0.78,0.76,0.69,0.80,0.59,0.51,-1.20,49.00,53.10
+JAX,KAN,JAX,JAX,JAX,JAX,KAN,KAN,JAX by 1.4,JAX by 0.5,JAX by 6.5,JAX by 2.6,JAX by 1.6,JAX by 0.3,Push,0.51,0.62,0.52,0.70,0.41,0.45,-0.40,40.70,41.80
+NOR,NYG,NOR,NYG,NOR,NYG,NYG,NOR,NYG by 0.7,NYG by 0.8,NOR by 0.7,NYG by 2.3,NYG by 0.8,NYG by 3.6,NYG by 4.0,0.51,0.47,0.55,0.44,0.47,0.52,-0.10,38.70,44.10
+NYJ,DAL,DAL,DAL,DAL,DAL,DAL,DAL,DAL by 3.3,DAL by 3.2,DAL by 3.7,DAL by 7.8,DAL by 3.6,DAL by 9.9,DAL by 5.4,0.30,0.41,0.37,0.37,0.38,0.39,1.40,44.00,47.40
+PHI,DEN,PHI,PHI,PHI,PHI,DEN,DEN,PHI by 4.5,PHI by 2.4,PHI by 9.9,PHI by 13.2,PHI by 5.3,DEN by 2.5,PHI by 3.3,0.73,0.58,0.67,0.83,0.43,0.28,-0.70,49.90,46.60
+RAV,HTX,RAV,RAV,RAV,RAV,HTX,HTX,RAV by 1.7,RAV by 3.0,RAV by 1.3,RAV by 3.4,RAV by 2.0,HTX by 11.5,RAV by 2.3,0.65,0.67,0.52,0.82,0.35,0.28,-0.10,52.60,50.80
+SDG,WAS,SDG,SDG,SDG,SDG,SDG,SDG,SDG by 3.2,SDG by 1.4,SDG by 9.6,SDG by 10.3,SDG by 3.8,SDG by 3.4,SDG by 0.8,0.64,0.57,0.63,0.77,0.60,0.61,-2.50,46.00,44.20
+SEA,TAM,SEA,SEA,TAM,SEA,TAM,SEA,SEA by 1.0,SEA by 0.4,SEA by 16.8,SEA by 5.8,SEA by 1.4,TAM by 4.3,TAM by 4.9,0.51,0.60,0.47,0.69,0.42,0.53,-1.30,45.70,45.20

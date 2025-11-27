@@ -7,7 +7,10 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, mean_absolute_error, accuracy_score
 import fire
 import os
-
+import xgboost as xgb
+import joblib
+from torch.optim.lr_scheduler import StepLR
+from torch.utils.data import TensorDataset, DataLoader # Import DataLoader
 
 class SimpleLinearModel(nn.Module):
     def __init__(self, input_size, output_size):
@@ -225,6 +228,334 @@ class NFLModel:
         print(f"\nModel training completed!")
         return self._model
 
+def train_mlp_win_classifier(data_path='final_modeling_dataset.csv', epochs=300, lr=0.001, model_name='mlp_win'):
+    """
+    Trains an MLP model specifically for win/loss classification (win_target).
+
+    Args:
+        data_path (str): Path to the training dataset CSV.
+        epochs (int): Number of training epochs.
+        lr (float): Learning rate for the optimizer.
+        model_name (str): Base name for the saved model and scaler files.
+        
+    Returns:
+        A tuple containing the trained model, the fitted scaler, and the list of feature columns.
+    """
+    print(f"--- Starting MLP Win Classifier Training ---")
+    
+    # 1. Load and prepare data
+    df = pd.read_csv(data_path)
+    context_cols = ['Game_ID', 'Season', 'Week', 'Date']
+    target_cols = ['spread_target', 'total_target', 'win_target']
+    feature_cols = [col for col in df.columns if col not in context_cols + target_cols]
+    
+    X = df[feature_cols].values
+    y = df['win_target'].values # Target is win/loss
+
+    # 2. Split data and scale features
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    scaler = StandardScaler().fit(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    print(f"Training on {len(X_train)} samples, testing on {len(X_test)} samples.")
+
+    # 3. Instantiate the model for classification (output_size=1 for a single logit)
+    model = MLPModel(input_size=X_train_scaled.shape[1], output_size=1)
+    
+    # 4. Define loss function and optimizer
+    # BCEWithLogitsLoss is ideal for binary classification with a single logit output
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+
+    # NEW: 4.5. Define the Learning Rate Scheduler
+    # This will decrease the learning rate by a factor of 0.1 every 50 epochs.
+    # This helps the model fine-tune its weights as training progresses.
+    scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
+    print("Using StepLR learning rate scheduler.")
+
+    # 5. Prepare PyTorch tensors
+    X_train_tensor = torch.FloatTensor(X_train_scaled)
+    y_train_tensor = torch.FloatTensor(y_train).unsqueeze(1) # Reshape for loss function
+    X_test_tensor = torch.FloatTensor(X_test_scaled)
+
+    # 6. Training loop
+    print("\nStarting training loop...")
+    for epoch in range(epochs):
+        model.train() # Set model to training mode
+        optimizer.zero_grad()
+        
+        # Forward pass
+        outputs = model(X_train_tensor)
+        
+        # Calculate loss
+        loss = criterion(outputs, y_train_tensor)
+        
+        # Backward pass and optimization
+        loss.backward()
+        optimizer.step()
+        
+        if (epoch + 1) % 25 == 0:
+            print(f'Epoch [{epoch+1}/{epochs}], Loss: {loss.item():.4f}, LR: {scheduler.get_last_lr()[0]:.6f}')
+        
+        # NEW: 6.5. Step the scheduler after each epoch
+        scheduler.step()
+
+    # 7. Evaluation
+    print("\nEvaluating model on the test set...")
+    model.eval() # Set model to evaluation mode
+    with torch.no_grad():
+        logits = model(X_test_tensor).numpy().flatten()
+        # Convert logits to binary predictions (0 or 1)
+        preds = (logits > 0).astype(int)
+        
+    acc = accuracy_score(y_test, preds)
+    print(f'Test Accuracy: {acc:.4f}')
+
+    # 8. Save the trained model and the scaler
+    model_path = f'{model_name}.pth'
+    scaler_path = f'scaler_{model_name}.pkl'
+    
+    torch.save(model.state_dict(), model_path)
+    joblib.dump(scaler, scaler_path)
+    
+    print(f'\nModel saved to: {model_path}')
+    print(f'Scaler saved to: {scaler_path}')
+    print("--- Training Complete ---")
+    
+    return model, scaler, feature_cols
+
+
+def train_mlp_spread(data_path='final_modeling_dataset.csv', epochs=1500, lr=0.001, model_name='mlp_spread', batch_size=64):
+    """
+    Trains an MLP model specifically for spread regression (spread_target).
+
+    Args:
+        data_path (str): Path to the training dataset CSV.
+        epochs (int): Number of training epochs.
+        lr (float): Learning rate for the optimizer.
+        model_name (str): Base name for the saved model and scaler files.
+        batch_size (int): The size of mini-batches for training.
+        
+    Returns:
+        A tuple containing the trained model, the fitted scaler, and the list of feature columns.
+    """
+    print(f"--- Starting MLP Spread Regressor Training ---")
+    
+    # 1. Load and prepare data
+    df = pd.read_csv(data_path)
+    context_cols = ['Game_ID', 'Season', 'Week', 'Date']
+    target_cols = ['spread_target', 'total_target', 'win_target']
+    feature_cols = [col for col in df.columns if col not in context_cols + target_cols]
+    
+    X = df[feature_cols].values
+    y = df['spread_target'].values # Target is the point spread
+
+    # 2. Split data and scale features
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    scaler = StandardScaler().fit(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    print(f"Training on {len(X_train)} samples, testing on {len(X_test)} samples.")
+
+    # 3. Instantiate the model for regression (output_size=1 for a single spread value)
+    model = MLPModel(input_size=X_train_scaled.shape[1], output_size=1)
+    
+    # 4. Define loss function and optimizer for regression
+    criterion = nn.L1Loss() # Using Mean Absolute Error (L1 Loss)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+
+    # 4.5. Define the Learning Rate Scheduler
+    scheduler = StepLR(optimizer, step_size=50, gamma=0.1)
+    print("Using StepLR learning rate scheduler.")
+
+    # 5. Prepare PyTorch tensors and DataLoader for batch training
+    X_train_tensor = torch.FloatTensor(X_train_scaled)
+    y_train_tensor = torch.FloatTensor(y_train).unsqueeze(1)
+    X_test_tensor = torch.FloatTensor(X_test_scaled)
+    
+    # Create a dataset and dataloader
+    train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+    print(f"Using mini-batch size of {batch_size}.")
+
+
+    # 6. Training loop with mini-batches
+    print("\nStarting training loop...")
+    for epoch in range(epochs):
+        model.train()
+        total_loss = 0
+        for inputs, targets in train_loader:
+            optimizer.zero_grad()
+            
+            outputs = model(inputs)
+            loss = criterion(outputs, targets)
+            
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        
+        avg_loss = total_loss / len(train_loader)
+        
+        if (epoch + 1) % 25 == 0:
+            print(f'Epoch [{epoch+1}/{epochs}], Average Loss: {avg_loss:.4f}, LR: {scheduler.get_last_lr()[0]:.6f}')
+        
+        scheduler.step()
+
+    # 7. Evaluation
+    print("\nEvaluating model on the test set...")
+    model.eval()
+    with torch.no_grad():
+        preds = model(X_test_tensor).numpy().flatten()
+        
+    mae = mean_absolute_error(y_test, preds)
+    print(f'Test Mean Absolute Error (MAE): {mae:.4f}')
+    print("(This is the average number of points the prediction was off by)")
+
+
+    # 8. Save the trained model and the scaler
+    model_path = f'{model_name}.pth'
+    scaler_path = f'scaler_{model_name}.pkl'
+    
+    torch.save(model.state_dict(), model_path)
+    joblib.dump(scaler, scaler_path)
+    
+    print(f'\nModel saved to: {model_path}')
+    print(f'Scaler saved to: {scaler_path}')
+    print("--- Training Complete ---")
+    
+    return model, scaler, feature_cols
+
+
+
+def train_xgboost_nfl(data_path='final_modeling_dataset.csv', test_size=0.2, random_state=42):
+    """
+    Train XGBoost models for spread, total, and win probability using the NFL dataset.
+    Returns: dict of trained models and evaluation metrics.
+    """
+    # Load data
+    df = pd.read_csv(data_path)
+    context_cols = ['Game_ID', 'Season', 'Week', 'Date']
+    target_cols = ['spread_target', 'total_target', 'win_target']
+    feature_cols = [col for col in df.columns if col not in context_cols + target_cols]
+    X = df[feature_cols].values
+    y = df[target_cols].values
+
+    # Split data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
+
+    # Train a separate XGBoost regressor for each target
+    models = {}
+    metrics = {}
+    for i, target in enumerate(target_cols):
+        reg = xgb.XGBRegressor(
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=random_state
+        )
+        reg.fit(X_train, y_train[:, i])
+        y_pred = reg.predict(X_test)
+        if target == 'win_target':
+            # For win probability, treat as classification for accuracy
+            acc = accuracy_score(y_test[:, i] > 0.5, y_pred > 0.5)
+            metrics[target] = {'accuracy': acc}
+            print(f"{target} accuracy: {acc:.3f}")
+        else:
+            mse = mean_squared_error(y_test[:, i], y_pred)
+            metrics[target] = {'mse': mse}
+            print(f"{target} MSE: {mse:.3f}")
+        models[target] = reg
+
+    for target, model in models.items():
+        model.save_model(f"xgboost_{target}.json")
+    print("XGBoost models saved as xgboost_spread_target.json, xgboost_total_target.json, xgboost_win_target.json")
+    return models, metrics
+
+def train_linear_spread(data_path='final_modeling_dataset.csv', epochs=200, lr=0.001, model_name='linear_spread'):
+    """Train a linear regression model for spread prediction."""
+    df = pd.read_csv(data_path)
+    context_cols = ['Game_ID', 'Season', 'Week', 'Date']
+    feature_cols = [col for col in df.columns if col not in context_cols + ['spread_target', 'total_target', 'win_target']]
+    X = df[feature_cols].values
+    y = df['spread_target'].values
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    scaler = StandardScaler().fit(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    model = SimpleLinearModel(input_size=X_train_scaled.shape[1], output_size=1)
+    criterion = nn.MSELoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+
+    X_train_tensor = torch.FloatTensor(X_train_scaled)
+    y_train_tensor = torch.FloatTensor(y_train).unsqueeze(1)
+    for epoch in range(epochs):
+        model.train()
+        optimizer.zero_grad()
+        outputs = model(X_train_tensor)
+        loss = criterion(outputs, y_train_tensor)
+        loss.backward()
+        optimizer.step()
+        if (epoch+1) % 20 == 0:
+            print(f'Epoch {epoch+1}, Loss: {loss.item():.4f}')
+
+    # Evaluate
+    model.eval()
+    X_test_tensor = torch.FloatTensor(X_test_scaled)
+    with torch.no_grad():
+        preds = model(X_test_tensor).numpy().flatten()
+    mse = mean_squared_error(y_test, preds)
+    print(f'Test MSE: {mse:.4f}')
+
+    torch.save(model.state_dict(), f'{model_name}.pth')
+    print(f'Model saved to {model_name}.pth')
+    return model, scaler, feature_cols
+
+def train_linear_win(data_path='final_modeling_dataset.csv', epochs=200, lr=0.001, model_name='linear_win'):
+    """Train a linear classification model for win prediction."""
+    df = pd.read_csv(data_path)
+    context_cols = ['Game_ID', 'Season', 'Week', 'Date']
+    feature_cols = [col for col in df.columns if col not in context_cols + ['spread_target', 'total_target', 'win_target']]
+    X = df[feature_cols].values
+    y = df['win_target'].values
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    scaler = StandardScaler().fit(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    model = SimpleLinearModel(input_size=X_train_scaled.shape[1], output_size=1)
+    criterion = nn.BCEWithLogitsLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+
+    X_train_tensor = torch.FloatTensor(X_train_scaled)
+    y_train_tensor = torch.FloatTensor(y_train).unsqueeze(1)
+    for epoch in range(epochs):
+        model.train()
+        optimizer.zero_grad()
+        outputs = model(X_train_tensor)
+        loss = criterion(outputs, y_train_tensor)
+        loss.backward()
+        optimizer.step()
+        if (epoch+1) % 20 == 0:
+            print(f'Epoch {epoch+1}, Loss: {loss.item():.4f}')
+
+    # Evaluate
+    model.eval()
+    X_test_tensor = torch.FloatTensor(X_test_scaled)
+    with torch.no_grad():
+        logits = model(X_test_tensor).numpy().flatten()
+        preds = (logits > 0).astype(int)
+    acc = accuracy_score(y_test, preds)
+    print(f'Test Accuracy: {acc:.4f}')
+
+    torch.save(model.state_dict(), f'{model_name}.pth')
+    print(f'Model saved to {model_name}.pth')
+    return model, scaler, feature_cols
+
 
 def check_data():
     """Check the dataset and print basic info"""
@@ -355,7 +686,7 @@ def predict_manual(
     set_feat('IsInternational', float(is_international))
     set_feat('Elo_Diff', float(elo_diff))
     set_feat('H_Season_Weight', float(season_weight))
-    set_feat('OffPtsPerDrive_vs_DefPtsPerPoss', float(off_pts_per_drive_vs_def_pts_per_poss))
+    set_feat('OffPtsPerDrive_vs_DefPtsPerPoss', float(ofpf_pts_per_drive_vs_def_pts_per_poss))
     set_feat('Off3DSuccess_vs_Def3DStop', float(off3d_vs_def3d))
     set_feat('Off4DSuccess_vs_Def4DStop', float(off4d_vs_def4d))
     set_feat('OffTORate_vs_DefTORate', float(to_rate_vs_def_to_rate))
@@ -417,6 +748,165 @@ def predict_prompt(model_path: str = "nfl_linear.pth"):
         total_def_eff_diff=total_def_eff_diff,
     )
 
+from sklearn.metrics import mean_squared_error
+
+def ensemble_spread_predictions(data_path='final_modeling_dataset.csv'):
+    # Load data
+    df = pd.read_csv(data_path)
+    context_cols = ['Game_ID', 'Season', 'Week', 'Date']
+    feature_cols = [col for col in df.columns if col not in context_cols + ['spread_target', 'total_target', 'win_target']]
+    X = df[feature_cols].values
+    y = df['spread_target'].values
+
+    # Split and scale
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    scaler = StandardScaler().fit(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Load models
+    linear_model = SimpleLinearModel(input_size=X_test_scaled.shape[1], output_size=1)
+    linear_model.load_state_dict(torch.load('linear_spread.pth', map_location='cpu'))
+    linear_model.eval()
+
+    xgb_model = xgb.XGBRegressor()
+    xgb_model.load_model('xgboost_spread_target.json')
+
+    # Predictions
+    with torch.no_grad():
+        linear_preds = linear_model(torch.FloatTensor(X_test_scaled)).numpy().flatten()
+    xgb_preds = xgb_model.predict(X_test)
+    ensemble_preds = (linear_preds + xgb_preds) / 2
+    mse = mean_squared_error(y_test, ensemble_preds)
+    print(f'Ensemble Test MSE: {mse:.4f}')
+    return mse
+
+from sklearn.metrics import mean_squared_error
+
+def weighted_ensemble_spread(data_path='final_modeling_dataset.csv', w_linear=0.4, w_xgb=0.6, output_csv='weighted_ensemble_spread.csv'):
+    df = pd.read_csv(data_path)
+    context_cols = ['Game_ID', 'Season', 'Week', 'Date']
+    feature_cols = [col for col in df.columns if col not in context_cols + ['spread_target', 'total_target', 'win_target']]
+    X = df[feature_cols].values
+    y = df['spread_target'].values
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    scaler = StandardScaler().fit(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Load models
+    linear_model = SimpleLinearModel(input_size=X_test_scaled.shape[1], output_size=1)
+    linear_model.load_state_dict(torch.load('linear_spread.pth', map_location='cpu'))
+    linear_model.eval()
+
+    xgb_model = xgb.XGBRegressor()
+    xgb_model.load_model('xgboost_spread_target.json')
+
+    # Predictions
+    with torch.no_grad():
+        linear_preds = linear_model(torch.FloatTensor(X_test_scaled)).numpy().flatten()
+    xgb_preds = xgb_model.predict(X_test)
+    ensemble_preds = w_linear * linear_preds + w_xgb * xgb_preds
+    mse = mean_squared_error(y_test, ensemble_preds)
+    print(f'Weighted Ensemble Test MSE: {mse:.4f}')
+
+    # Save predictions to CSV
+    #df_out = pd.DataFrame({'ensemble_pred': ensemble_preds, 'actual': y_test})
+    #df_out.to_csv(output_csv, index=False)
+    #print(f'Predictions saved to {output_csv}')
+    return ensemble_preds, mse
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+
+def stacking_win_ensemble(data_path='final_modeling_dataset.csv', output_csv='stacking_win_ensemble.csv'):
+    df = pd.read_csv(data_path)
+    context_cols = ['Game_ID', 'Season', 'Week', 'Date']
+    feature_cols = [col for col in df.columns if col not in context_cols + ['spread_target', 'total_target', 'win_target']]
+    X = df[feature_cols].values
+    y = df['win_target'].values
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    scaler = StandardScaler().fit(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Load models
+    linear_model = SimpleLinearModel(input_size=X_test_scaled.shape[1], output_size=1)
+    linear_model.load_state_dict(torch.load('linear_win.pth', map_location='cpu'))
+    linear_model.eval()
+
+    xgb_model = xgb.XGBRegressor()
+    xgb_model.load_model('xgboost_win_target.json')
+
+    # Get base model predictions
+    with torch.no_grad():
+        linear_logits_train = linear_model(torch.FloatTensor(X_train_scaled)).numpy().flatten()
+        linear_logits_test = linear_model(torch.FloatTensor(X_test_scaled)).numpy().flatten()
+    xgb_preds_train = xgb_model.predict(X_train)
+    xgb_preds_test = xgb_model.predict(X_test)
+
+    # Stack predictions as features
+    stack_X_train = np.column_stack([linear_logits_train, xgb_preds_train])
+    stack_X_test = np.column_stack([linear_logits_test, xgb_preds_test])
+
+    # Train meta-model
+    meta_model = LogisticRegression()
+    meta_model.fit(stack_X_train, y_train)
+    # Predict
+    ensemble_preds = meta_model.predict(stack_X_test)
+    acc = accuracy_score(y_test, ensemble_preds)
+    print(f'Stacking Ensemble Test Accuracy: {acc:.4f}')
+
+    # Save predictions to CSV
+    #df_out = pd.DataFrame({'ensemble_pred': ensemble_preds, 'actual': y_test})
+    #df_out.to_csv(output_csv, index=False)
+    #print(f'Predictions saved to {output_csv}')
+    return ensemble_preds, acc
+from sklearn.linear_model import LinearRegression
+def stacking_spread_ensemble(data_path='final_modeling_dataset.csv', output_csv='stacking_spread_ensemble.csv'):
+    df = pd.read_csv(data_path)
+    context_cols = ['Game_ID', 'Season', 'Week', 'Date']
+    feature_cols = [col for col in df.columns if col not in context_cols + ['spread_target', 'total_target', 'win_target']]
+    X = df[feature_cols].values
+    y = df['spread_target'].values
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    scaler = StandardScaler().fit(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    # Load models
+    linear_model = SimpleLinearModel(input_size=X_test_scaled.shape[1], output_size=1)
+    linear_model.load_state_dict(torch.load('linear_spread.pth', map_location='cpu'))
+    linear_model.eval()
+
+    xgb_model = xgb.XGBRegressor()
+    xgb_model.load_model('xgboost_spread_target.json')
+
+    # Get base model predictions
+    with torch.no_grad():
+        linear_preds_train = linear_model(torch.FloatTensor(X_train_scaled)).numpy().flatten()
+        linear_preds_test = linear_model(torch.FloatTensor(X_test_scaled)).numpy().flatten()
+    xgb_preds_train = xgb_model.predict(X_train)
+    xgb_preds_test = xgb_model.predict(X_test)
+
+    # Stack predictions as features
+    stack_X_train = np.column_stack([linear_preds_train, xgb_preds_train])
+    stack_X_test = np.column_stack([linear_preds_test, xgb_preds_test])
+
+    # Train meta-model
+    meta_model = LinearRegression()
+    meta_model.fit(stack_X_train, y_train)
+    # Predict
+    ensemble_preds = meta_model.predict(stack_X_test)
+    mse = mean_squared_error(y_test, ensemble_preds)
+    print(f'Stacking Ensemble Test MSE: {mse:.4f}')
+
+    # Save predictions to CSV
+    #df_out = pd.DataFrame({'ensemble_pred': ensemble_preds, 'actual': y_test})
+    #df_out.to_csv(output_csv, index=False)
+    #print(f'Predictions saved to {output_csv}')
+    return ensemble_preds, mse
 
 def main():
     fire.Fire({
@@ -428,6 +918,15 @@ def main():
         "check_predictions": check_predictions,
         "predict": predict_manual,
         "predict_prompt": predict_prompt,
+        "train_xgboost": train_xgboost_nfl,
+        "train_linear_win": train_linear_win,
+        "train_linear_spread": train_linear_spread,  
+        "train_mlp_spread": train_mlp_spread,  
+        "ensemble_spread_predictions": ensemble_spread_predictions,
+        "weighted_ensemble_spread": weighted_ensemble_spread,
+        "stacking_win_ensemble": stacking_win_ensemble,  
+        "stacking_spread_ensemble": stacking_spread_ensemble, 
+        "train_mlp_win_classifier": train_mlp_win_classifier,
     })
 
 if __name__ == "__main__":

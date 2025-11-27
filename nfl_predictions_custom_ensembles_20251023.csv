@@ -1,0 +1,14 @@
+Home_Team,Away_Team,Predicted_Spread_avg_spread,Pick_avg_spread,Predicted_Spread_weighted_spread,Pick_weighted_spread,Prob_Home_Win_stacking_win,Pick_stacking_win,Predicted_Spread_stacking_spread,Pick_stacking_spread
+SDG,MIN,-3.04,MIN,-3.16,MIN,0.387,MIN,-4.64,MIN
+ATL,MIA,6.7,ATL,7.89,ATL,0.906,ATL,20.66,ATL
+CIN,NYJ,2.16,CIN,2.95,CIN,0.827,CIN,12.39,CIN
+CAR,BUF,-4.0,BUF,-4.34,BUF,0.113,BUF,-8.55,BUF
+HTX,SFO,4.91,HTX,5.29,HTX,0.817,HTX,6.76,HTX
+NWE,CLE,5.32,NWE,5.93,NWE,0.849,NWE,10.75,NWE
+PHI,NYG,0.55,PHI,0.98,PHI,0.307,NYG,5.92,PHI
+NOR,TAM,-3.94,TAM,-4.34,TAM,0.078,TAM,-9.39,TAM
+CLT,OTI,5.5,CLT,6.0,CLT,0.925,CLT,8.93,CLT
+DEN,DAL,-1.18,DAL,-1.66,DAL,0.235,DAL,-9.77,DAL
+PIT,GNB,-0.42,GNB,-0.4,GNB,0.152,GNB,-1.3,GNB
+KAN,WAS,4.67,KAN,5.24,KAN,0.989,KAN,9.82,KAN
+RAV,CHI,-5.34,CHI,-5.28,CHI,0.076,CHI,-2.48,CHI
